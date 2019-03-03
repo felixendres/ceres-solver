@@ -67,19 +67,22 @@ void BlockOrderingToScalarOrdering(
 //
 //   R * solution = rhs
 //
-// Where R is an upper triangular compressed column sparse matrix.
+// Where R is an upper triangular compressed column sparse matrix of size num_cols x num_cols.
+// If R is of size M x num_cols, everything but the top left num_cols x num_cols block is ignored.
+// The diagonal of R is assumed to be all non-zero. rhs and solution are assumed to be num_cols x 1 vectors.
 template <typename IntegerType>
 void SolveUpperTriangularInPlace(IntegerType num_cols,
                                  const IntegerType* rows,
                                  const IntegerType* cols,
                                  const double* values,
                                  double* rhs_and_solution) {
-  for (IntegerType c = num_cols - 1; c >= 0; --c) {
-    rhs_and_solution[c] /= values[cols[c + 1] - 1];
-    for (IntegerType idx = cols[c]; idx < cols[c + 1] - 1; ++idx) {
-      const IntegerType r = rows[idx];
+  for (IntegerType c = num_cols - 1; c >= 0; --c) { //process columns beginning by last
+    //"cols[c+1]-1" is the last value of the column, i.e. here the diagonal element at R[c,c]
+    rhs_and_solution[c] /= values[cols[c + 1] - 1]; //compute the solution[c] from R[c,c] (assumes R[c,c+1...num_columns] has already been processed 
+    for (IntegerType idx = cols[c]; idx < cols[c + 1] - 1; ++idx) {//iterate over values R[0...c-1, c]
+      const IntegerType r = rows[idx]; //in which row the next value belongs
       const double v = values[idx];
-      rhs_and_solution[r] -= v * rhs_and_solution[c];
+      rhs_and_solution[r] -= v * rhs_and_solution[c]; //prepare solution[r]
     }
   }
 }
@@ -115,6 +118,7 @@ void SolveUpperTriangularTransposeInPlace(IntegerType num_cols,
 //
 // The function exploits this knowledge to reduce the number of
 // floating point operations.
+// This function does R'y = b (forward substitution) then Rx = y (backward substitution)
 template <typename IntegerType>
 void SolveRTRWithSparseRHS(IntegerType num_cols,
                            const IntegerType* rows,
@@ -122,20 +126,27 @@ void SolveRTRWithSparseRHS(IntegerType num_cols,
                            const double* values,
                            const int rhs_nonzero_index,
                            double* solution) {
+  //b = [ ...0, 1, 0...]
+  //y = 0
   std::fill(solution, solution + num_cols, 0.0);
+  //with i = rhs_nonzero_index:
+  //b_i = R'[i,i]
   solution[rhs_nonzero_index] = 1.0 / values[cols[rhs_nonzero_index + 1] - 1];
 
+  //Forward substitution. Since all b[0...i-1] are zero, and we assume the diagonal elements of R to be non-zero
+  //all coefficients y[0...i-1] must be zero too. E.g., for the first row the equation is: R[0,0] * y[0] = b[0]
   for (IntegerType c = rhs_nonzero_index + 1; c < num_cols; ++c) {
-    for (IntegerType idx = cols[c]; idx < cols[c + 1] - 1; ++idx) {
-      const IntegerType r = rows[idx];
-      if (r < rhs_nonzero_index) continue;
+    for (IntegerType idx = cols[c]; idx < cols[c + 1] - 1; ++idx) {//for all values in column c
+      const IntegerType r = rows[idx];//get row of value
+      if (r < rhs_nonzero_index) continue; //solution[r] is 0 anyway, skip
       const double v = values[idx];
       solution[c] -= v * solution[r];
     }
+    //cols[c+1]-1 is the last value in the column c (for upper right matrix -> R[c,c])//cols[c+1]-1 is the last value in the column c (for upper right matrix -> R[c,c])
     solution[c] =  solution[c] / values[cols[c + 1] - 1];
   }
-
-  SolveUpperTriangularInPlace(num_cols, rows, cols, values, solution);
+  //Solve Rx = y
+  SolveUpperTriangularInPlace(num_cols, rows, cols, values, solution);//solution is rhs on onput (b of Ax=b), but x on output
 }
 
 }  // namespace internal
