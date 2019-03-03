@@ -630,7 +630,9 @@ bool CovarianceImpl::ComputeCovarianceValuesUsingSuiteSparseQR() {
   SuiteSparse_long* permutation = NULL;
 
   // Compute a Q-less QR factorization of the Jacobian. Since we are
-  // only interested in inverting J'J = R'R, we do not need Q. This
+  // only interested in inverting J'J = R'R, we do not need Q.
+  // (i.e., given QR = J, and we seek X = J'J^-1 by solving J'J X = I
+  // we get R'Q'QR X = I which is R'R X = I). This
   // saves memory and gives us R as a permuted compressed column
   // sparse matrix.
   //
